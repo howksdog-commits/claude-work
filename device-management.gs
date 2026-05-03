@@ -45,6 +45,8 @@ function onOpen() {
     .addItem('✅ データ検証レポートを出す', 'runValidation')
     .addItem('📧 各担任に確認メールを送る', 'sendMailToHomeroomTeachers')
     .addSeparator()
+    .addItem('🔍 名前・端末番号で検索', 'showSearchDialog')
+    .addSeparator()
     .addItem('👤 転入生を追加', 'showTransferInDialog')
     .addItem('👤 転出生を削除', 'showTransferOutDialog')
     .addSeparator()
@@ -371,4 +373,145 @@ function runYearEndUpdate() {
   }
 
   ui.alert('年度更新が完了しました。新1年生の名簿を入力してください。');
+}
+
+// ============================================================
+// 5. 名前・端末番号で検索
+// ============================================================
+function showSearchDialog() {
+  const html = HtmlService.createHtmlOutput(getSearchHtml())
+    .setWidth(720).setHeight(520);
+  SpreadsheetApp.getUi().showModalDialog(html, '🔍 検索');
+}
+
+/**
+ * HTML側から呼び出される検索本体
+ * keyword: 名前の一部 / アドレス / 端末番号 のいずれかで部分一致
+ */
+function searchStudents(keyword) {
+  keyword = String(keyword || '').trim();
+  if (!keyword) return [];
+  const lower = keyword.toLowerCase();
+
+  const hits = [];
+  getClassSheets().forEach(sheet => {
+    const className = sheet.getName();
+    getStudentRows(sheet).forEach(stu => {
+      if (!stu.name && !stu.deviceId && !stu.email) return;
+      const blob = (stu.name + ' ' + stu.email + ' ' + stu.deviceId).toLowerCase();
+      if (blob.indexOf(lower) !== -1) {
+        hits.push({
+          className,
+          rowNum: stu.rowNum,
+          name: stu.name,
+          email: stu.email,
+          password: stu.password,
+          deviceId: stu.deviceId,
+        });
+      }
+    });
+  });
+  return hits;
+}
+
+/**
+ * 該当行にジャンプ（HTML側からのリンク用）
+ */
+function jumpToRow(className, rowNum) {
+  const ss = SpreadsheetApp.getActive();
+  const sheet = ss.getSheetByName(className);
+  if (!sheet) return false;
+  ss.setActiveSheet(sheet);
+  sheet.setActiveRange(sheet.getRange(rowNum, 1, 1, CONFIG.COL.DEVICE_ID));
+  return true;
+}
+
+function getSearchHtml() {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  body { font-family: -apple-system, "Hiragino Sans", sans-serif; margin: 12px; font-size: 13px; }
+  .search-box { display: flex; gap: 8px; margin-bottom: 10px; }
+  input[type="text"] { flex: 1; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+  button { padding: 8px 16px; font-size: 14px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #1558b0; }
+  .hint { color: #666; font-size: 11px; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f5; font-weight: bold; }
+  tr:hover { background: #f0f8ff; }
+  .jump { color: #1a73e8; cursor: pointer; text-decoration: underline; font-size: 11px; }
+  .empty { color: #888; padding: 20px; text-align: center; }
+  .count { margin-top: 8px; color: #555; font-size: 12px; }
+  .password { font-family: monospace; background: #fffae6; padding: 1px 4px; }
+</style>
+</head>
+<body>
+  <div class="search-box">
+    <input type="text" id="kw" placeholder="名前・アドレス・端末番号の一部を入力..." autofocus>
+    <button onclick="doSearch()">検索</button>
+  </div>
+  <div class="hint">部分一致で検索します（例：「田中」「T-045」「tanaka@」）</div>
+  <div id="result"></div>
+
+<script>
+  document.getElementById('kw').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  function doSearch() {
+    const kw = document.getElementById('kw').value;
+    document.getElementById('result').innerHTML = '<div class="empty">検索中...</div>';
+    google.script.run
+      .withSuccessHandler(render)
+      .withFailureHandler(err => {
+        document.getElementById('result').innerHTML =
+          '<div class="empty">エラー: ' + err.message + '</div>';
+      })
+      .searchStudents(kw);
+  }
+
+  function render(hits) {
+    const div = document.getElementById('result');
+    if (!hits || hits.length === 0) {
+      div.innerHTML = '<div class="empty">該当する生徒が見つかりませんでした。</div>';
+      return;
+    }
+    let html = '<div class="count">' + hits.length + '件ヒット</div>';
+    html += '<table><thead><tr>' +
+      '<th>クラス</th><th>名前</th><th>端末番号</th>' +
+      '<th>アドレス</th><th>パスワード</th><th></th>' +
+      '</tr></thead><tbody>';
+    hits.forEach(h => {
+      html += '<tr>' +
+        '<td>' + esc(h.className) + '</td>' +
+        '<td>' + esc(h.name) + '</td>' +
+        '<td>' + esc(h.deviceId) + '</td>' +
+        '<td>' + esc(h.email) + '</td>' +
+        '<td><span class="password">' + esc(h.password) + '</span></td>' +
+        '<td><span class="jump" onclick="jump(\\'' + esc(h.className) + '\\',' + h.rowNum + ')">該当行へ</span></td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    div.innerHTML = html;
+  }
+
+  function jump(className, rowNum) {
+    google.script.run
+      .withSuccessHandler(() => google.script.host.close())
+      .jumpToRow(className, rowNum);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+</script>
+</body>
+</html>
+  `;
 }
