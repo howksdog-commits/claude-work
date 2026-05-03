@@ -13,8 +13,8 @@
  */
 
 const CONFIG = {
-  // クラスシート名のパターン（例: "1年1組"）
-  CLASS_SHEET_REGEX: /^(\d)年(\d)組$/,
+  // クラスシート名のパターン（例: "1年"）
+  CLASS_SHEET_REGEX: /^(\d)年$/,
 
   // 端末番号の形式（例: "T-001"）
   DEVICE_ID_REGEX: /^T-\d{3}$/,
@@ -344,7 +344,7 @@ function runYearEndUpdate() {
   const year = new Date().getFullYear();
 
   // 6年生をアーカイブ（シート名変更で残す）
-  const sixthGraders = ss.getSheets().filter(s => /^6年\d組$/.test(s.getName()));
+  const sixthGraders = ss.getSheets().filter(s => /^6年$/.test(s.getName()));
   sixthGraders.forEach(s => {
     const newName = `${CONFIG.ARCHIVE_PREFIX}${year}_${s.getName()}`;
     s.setName(newName);
@@ -353,23 +353,20 @@ function runYearEndUpdate() {
   // 5年→6年, 4年→5年, ... 1年→2年（数字が大きい順に処理して衝突回避）
   for (let g = 5; g >= 1; g--) {
     ss.getSheets().forEach(s => {
-      const m = s.getName().match(/^(\d)年(\d)組$/);
+      const m = s.getName().match(/^(\d)年$/);
       if (m && parseInt(m[1], 10) === g) {
-        s.setName(`${g + 1}年${m[2]}組`);
+        s.setName(`${g + 1}年`);
       }
     });
   }
 
-  // 新1年シートを既存の1年シート数だけ作成（既存の組構成を踏襲）
-  const existingFirstGrade = ss.getSheets().filter(s => /^2年\d組$/.test(s.getName())).length;
-  for (let i = 1; i <= existingFirstGrade; i++) {
-    const name = `1年${i}組`;
-    if (!ss.getSheetByName(name)) {
-      const sheet = ss.insertSheet(name);
-      sheet.getRange(1, 1, 1, 4).setValues([['名前', 'アドレス', 'パスワード', '端末番号']])
+  // 新1年シートを作成
+  const name = '1年';
+  if (!ss.getSheetByName(name)) {
+    const sheet = ss.insertSheet(name);
+    sheet.getRange(1, 1, 1, 4).setValues([['名前', 'アドレス', 'パスワード', '端末番号']])
         .setFontWeight('bold');
       sheet.setFrozenRows(1);
-    }
   }
 
   ui.alert('年度更新が完了しました。新1年生の名簿を入力してください。');
