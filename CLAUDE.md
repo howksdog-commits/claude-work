@@ -29,8 +29,35 @@
 
 - Googleドライブのスプレッドシート「(R8年度)６年１組 時間割」（fileId: `1hfSQ7G9Iw1HJK8OBqicICNtpp21OvMWq6wk4007cXNw`）を取得する
 - 今日の曜日に対応する時間割を読み取り、1限〜6限の順に表示する
-- 列のずれが生じやすいため、曜日と列の対応を慎重に確認してから読み取ること
 - 祝日・振替休日の場合はその旨を明示する
+
+**【重要】時間割の読み取り手順（必ずこの方法で）：**
+
+`read_file_content` や CSV エクスポートでは「時数一覧」シートしか取得できず、月別シートの後半行が読めない。**必ず以下の xlsx + openpyxl 方式で読み取ること。**
+
+1. `download_file_content` を `exportMimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` で実行（fileId: `1hfSQ7G9Iw1HJK8OBqicICNtpp21OvMWq6wk4007cXNw`）
+2. 結果は大きいため一時ファイルに保存される。Bash + Python で以下のように解析する：
+
+```python
+import json, base64, io
+from openpyxl import load_workbook
+with open('<一時ファイルパス>') as f:
+    data = json.load(f)
+wb = load_workbook(io.BytesIO(base64.b64decode(data['content'])), data_only=True)
+ws = wb['5月']  # 今日の月のシート名を指定（'4月','5月',...,'3月'）
+# 該当週の行（月曜の日付セルから6限まで）を読み取る
+for row in range(<開始行>, <終了行>+1):
+    for col in range(1, 8):
+        v = ws.cell(row=row, column=col).value
+        if v is not None:
+            print(f'{chr(64+col)}{row}={v}')
+```
+
+**シート構造の目安**：
+- 各月シートに週ブロックが縦に並ぶ。1週ブロック = 約17行（日付行・行事/予定行・1限〜6限×各2-3行・準備物・下校時刻 等）
+- 月曜列 = B列（その教科）/ C列（その単元名）、火曜列 = D/E、水曜 = F/G、木曜 = H/I、金曜 = J/K
+- 5月の週開始行参考：4/27週=44行付近、5/4週=53行付近、5/11週=61行、5/18週=78行付近
+- データが見つからない週は該当行を `range(行-3, 行+18)` 程度の範囲で全セル走査して位置を確認すること
 
 ---
 
