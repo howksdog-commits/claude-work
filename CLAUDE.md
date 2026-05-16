@@ -25,3 +25,4 @@ Google Calendar標準のインポート形式（Subject, Start Date, Start Time,
 4. 各提出物に**関連ドキュメントへのリンク**を記載する。
 5. 完成したドキュメントをGoogle Driveに保存する（MIME type: text/plain → Google Doc に自動変換）。
 6. 新しいデータが追加された場合はユーザーから都度提示されるので、差分のみ追加する。
+7. 提出物の〆切イベントをGoogleカレンダーにAPI経由で作成する際は、必ず**〆切1週間前（10080分前）のpopup通知**を設定する。
